@@ -51,9 +51,15 @@ Funkcje GUI:
 - wybór formatu `R2000` / `R12`,
 - automatyczny zapis DXF + PDF obok źródła (`<nazwa>_<timestamp>.dxf` / `.pdf`).
 
+## Pobierz EXE (bez budowania)
+
+Gotowy program Windows jest w [Releases](https://github.com/ArturOrysz/dxf-trutops-cleaner/releases):
+
+- **dxf_trutops_cleaner.exe** — uruchom bez instalacji Pythona
+
 ## Standalone EXE (Windows)
 
-Zbuduj jednoplikowy program:
+Zbuduj jednoplikowy program lokalnie:
 
 ```powershell
 build_exe.bat
