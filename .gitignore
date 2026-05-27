@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Build / PyInstaller
+build/
+dist/
+*.spec
+
+# Wygenerowane pliki konwersji
+*_20*.dxf
+*_20*.pdf
+*_clean.dxf
+
+# Duże pliki przykładowe (pobierz lokalnie)
+panel_nr10.dxf
+panel_nr10_zapisany_w_trutopsie.dxf
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
