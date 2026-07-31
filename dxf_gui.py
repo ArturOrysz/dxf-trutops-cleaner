@@ -61,7 +61,7 @@ class App(tk.Tk):
 
         ttk.Label(
             settings,
-            text="Wynik w folderze źródła: <nazwa>_<timestamp>.dxf oraz <nazwa>_<timestamp>.pdf (podgląd)",
+            text="Wynik w folderze źródła: <nazwa>_<timestamp>.dxf",
         ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
         list_frame = ttk.LabelFrame(root, text="Pliki do konwersji", padding=8)
@@ -138,8 +138,11 @@ class App(tk.Tk):
                 self._threadsafe_log(
                     f"OK: {result['before']} -> {result['after']} | kontury: {result['contours']}"
                 )
+                if result.get("splines"):
+                    self._threadsafe_log(
+                        f"SPLINE: {result['splines']} -> segmenty lukowe: {result['arc_segments']}"
+                    )
                 self._threadsafe_log(f"Zapisano DXF: {result['output']}")
-                self._threadsafe_log(f"Zapisano PDF: {result['pdf_output']}")
             except Exception as exc:
                 failures += 1
                 self._threadsafe_log(f"BLAD: {path} | {exc}")

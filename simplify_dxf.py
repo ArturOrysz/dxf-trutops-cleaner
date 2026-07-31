@@ -3,6 +3,8 @@
 Upraszcza geometrię DXF (gęste POLYLINE z Etsy) do czystych LWPOLYLINE
 z wierzchołkami tylko w załomieniach — bez nadmiarowych punktów w TruTops.
 
+SPLINE (krzywe Béziera) konwertuje na LWPOLYLINE z segmentami prostymi i łukowymi (bulge).
+
 Wymaga: pip install ezdxf
 """
 
@@ -16,7 +18,13 @@ from pathlib import Path
 
 import ezdxf
 from ezdxf import bbox
-from ezdxf.addons import r12writer
+from ezdxf.math import bulge_to_arc
+
+from arc_fit import count_arc_segments, spline_to_vertices
+
+# (x, y, bulge) — bulge dotyczy odcinka do następnego wierzchołka
+Vertex = tuple[float, float, float]
+Contour = tuple[list[Vertex], bool, str]
 
 
 def dedupe_consecutive(points: list[tuple[float, float]], eps: float = 1e-9) -> list[tuple[float, float]]:
@@ -84,31 +92,23 @@ def polyline_points_2d(entity) -> tuple[list[tuple[float, float]], bool]:
     raise TypeError(dxftype)
 
 
-def add_lwpolyline(
-    msp,
-    points: list[tuple[float, float]],
-    *,
-    layer: str,
-    closed: bool,
-) -> None:
-    if len(points) < 2:
-        return
-    pl = msp.add_lwpolyline(
-        [(x, y) for x, y in points],
-        dxfattribs={"layer": layer},
-        close=closed,
-    )
-    _ = pl
+def as_bulge_vertices(points: list[tuple[float, float]]) -> list[Vertex]:
+    return [(x, y, 0.0) for x, y in points]
 
 
 def collect_simplified(
     doc: ezdxf.document.Drawing, tolerance: float
-) -> tuple[list[tuple[list[tuple[float, float]], bool, str]], int, int]:
+) -> tuple[list[Contour], int, int, int, int]:
+    """
+    Zwraca: kontury, wierzchołki przed, wierzchołki po, liczba SPLINE, segmenty łukowe.
+    """
     msp = doc.modelspace()
     sources = list(msp.query("POLYLINE LWPOLYLINE LINE"))
+    splines = list(msp.query("SPLINE"))
     originals = 0
     simplified = 0
-    result: list[tuple[list[tuple[float, float]], bool, str]] = []
+    arc_segments = 0
+    result: list[Contour] = []
 
     for entity in sources:
         try:
@@ -124,32 +124,72 @@ def collect_simplified(
                 simp = simp[:-1]
         simplified += len(simp)
         if len(simp) >= 2:
-            result.append((simp, closed, layer))
+            verts = as_bulge_vertices(simp)
+            result.append((verts, closed, layer))
 
-    return result, originals, simplified
+    for entity in splines:
+        layer = entity.dxf.layer
+        try:
+            verts, closed = spline_to_vertices(entity, tolerance)
+        except Exception:
+            continue
+        # Przybliżona liczba „przed”: próbki spłaszczenia przy tej samej tolerancji
+        try:
+            from ezdxf import path as ezpath
+
+            flat = list(ezpath.make_path(entity).flattening(distance=max(tolerance, 0.01)))
+            originals += max(len(flat), len(verts))
+        except Exception:
+            originals += len(verts)
+        simplified += len(verts)
+        arc_segments += count_arc_segments(verts)
+        if len(verts) >= 2:
+            result.append((verts, closed, layer))
+
+    return result, originals, simplified, len(splines), arc_segments
 
 
-def write_r2000(
-    polylines: list[tuple[list[tuple[float, float]], bool, str]], path: Path
-) -> ezdxf.document.Drawing:
-    doc = ezdxf.new("R2000")
-    msp = doc.modelspace()
+def _add_line_or_arc(msp, start: Vertex, end: Vertex, *, layer: str) -> None:
+    """TruTops rozpoznaje tylko LINE i ARC — nie LWPOLYLINE."""
+    x0, y0, bulge = start
+    x1, y1, _ = end
+    attribs = {"layer": layer}
+    if abs(bulge) < 1e-6:
+        msp.add_line((x0, y0), (x1, y1), dxfattribs=attribs)
+        return
+    center, start_angle, end_angle, radius = bulge_to_arc((x0, y0), (x1, y1), bulge)
+    msp.add_arc(
+        center=(float(center.x), float(center.y)),
+        radius=abs(float(radius)),
+        start_angle=math.degrees(float(start_angle)),
+        end_angle=math.degrees(float(end_angle)),
+        dxfattribs=attribs,
+    )
+
+
+def _write_contours_as_lines_arcs(msp, polylines: list[Contour]) -> None:
     for pts, closed, layer in polylines:
-        add_lwpolyline(msp, pts, layer=layer, closed=closed)
+        if len(pts) < 2:
+            continue
+        n = len(pts)
+        for i in range(n - 1):
+            _add_line_or_arc(msp, pts[i], pts[i + 1], layer=layer)
+        if closed and n >= 2:
+            _add_line_or_arc(msp, pts[-1], pts[0], layer=layer)
+
+
+def write_r2000(polylines: list[Contour], path: Path) -> ezdxf.document.Drawing:
+    """R2000 dla TruTops: wyłącznie LINE + ARC."""
+    doc = ezdxf.new("R2000")
+    _write_contours_as_lines_arcs(doc.modelspace(), polylines)
     doc.saveas(path)
     return doc
 
 
-def write_r12(
-    polylines: list[tuple[list[tuple[float, float]], bool, str]], path: Path
-) -> ezdxf.document.Drawing:
+def write_r12(polylines: list[Contour], path: Path) -> ezdxf.document.Drawing:
+    """R12 dla TruTops: wyłącznie LINE + ARC."""
     doc = ezdxf.new("R12")
-    msp = doc.modelspace()
-    for pts, closed, layer in polylines:
-        out_pts = list(pts)
-        if closed and out_pts and out_pts[0] != out_pts[-1]:
-            out_pts.append(out_pts[0])
-        r12writer.draw_polyline(msp, out_pts, attribs={"layer": layer})
+    _write_contours_as_lines_arcs(doc.modelspace(), polylines)
     doc.saveas(path)
     return doc
 
@@ -159,66 +199,17 @@ def make_timestamped_output_path(input_path: Path) -> Path:
     return input_path.with_name(f"{input_path.stem}_{stamp}.dxf")
 
 
-def write_preview_pdf(
-    polylines: list[tuple[list[tuple[float, float]], bool, str]],
-    path: Path,
-    *,
-    title: str | None = None,
-) -> None:
-    """Podgląd PDF (orientacyjny) — do załączników, bez wymagań precyzji."""
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(11.69, 8.27))
-    xs_all: list[float] = []
-    ys_all: list[float] = []
-
-    for pts, closed, _layer in polylines:
-        if len(pts) < 2:
-            continue
-        xs = [p[0] for p in pts]
-        ys = [p[1] for p in pts]
-        if closed and (xs[0], ys[0]) != (xs[-1], ys[-1]):
-            xs.append(xs[0])
-            ys.append(ys[0])
-        ax.plot(xs, ys, color="#1a1a1a", linewidth=0.9, solid_capstyle="round")
-        xs_all.extend(xs)
-        ys_all.extend(ys)
-
-    if not xs_all:
-        plt.close(fig)
-        raise ValueError("Brak geometrii do podglądu PDF.")
-
-    width = max(xs_all) - min(xs_all)
-    height = max(ys_all) - min(ys_all)
-    margin = max(width, height) * 0.05 or 1.0
-    ax.set_xlim(min(xs_all) - margin, max(xs_all) + margin)
-    ax.set_ylim(min(ys_all) - margin, max(ys_all) + margin)
-    ax.set_aspect("equal", adjustable="box")
-    ax.axis("off")
-    if title:
-        ax.set_title(title, fontsize=10, pad=8)
-
-    fig.savefig(path, format="pdf", bbox_inches="tight", pad_inches=0.15)
-    plt.close(fig)
-
-
 def convert_file(input_path: Path, tolerance: float, version: str, output_path: Path | None = None) -> dict:
     out = output_path or make_timestamped_output_path(input_path)
     src = ezdxf.readfile(input_path)
-    polylines, before, after = collect_simplified(src, tolerance)
+    polylines, before, after, spline_count, arc_segments = collect_simplified(src, tolerance)
     if not polylines:
-        raise ValueError("Brak geometrii POLYLINE/LWPOLYLINE/LINE.")
+        raise ValueError("Brak geometrii POLYLINE/LWPOLYLINE/LINE/SPLINE.")
 
     if version == "R12":
         doc = write_r12(polylines, out)
     else:
         doc = write_r2000(polylines, out)
-
-    pdf_out = out.with_suffix(".pdf")
-    write_preview_pdf(polylines, pdf_out, title=input_path.name)
 
     extents_text = None
     try:
@@ -231,17 +222,18 @@ def convert_file(input_path: Path, tolerance: float, version: str, output_path: 
     return {
         "input": input_path,
         "output": out,
-        "pdf_output": pdf_out,
         "before": before,
         "after": after,
         "contours": len(polylines),
+        "splines": spline_count,
+        "arc_segments": arc_segments,
         "extents": extents_text,
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Upraszcza DXF pod TruTops — usuwa nadmiarowe wierzchołki na prostych."
+        description="Upraszcza DXF pod TruTops — RDP na poliliniach, SPLINE→łuki+proste."
     )
     parser.add_argument("inputs", nargs="+", type=Path, help="Jeden lub wiele plików DXF wejściowych")
     parser.add_argument(
@@ -295,10 +287,13 @@ def main() -> int:
             f"(tolerancja {args.tolerance})"
         )
         print(f"Kontury: {result['contours']}")
+        if result["splines"]:
+            print(
+                f"SPLINE: {result['splines']} -> segmenty lukowe: {result['arc_segments']}"
+            )
         if result["extents"]:
             print(f"Zakres: {result['extents']}")
         print(f"Zapisano DXF: {result['output']}")
-        print(f"Zapisano PDF: {result['pdf_output']}")
 
     return 1 if failures else 0
 

@@ -18,6 +18,9 @@ dist/
 # Duże pliki przykładowe (pobierz lokalnie)
 panel_nr10.dxf
 panel_nr10_zapisany_w_trutopsie.dxf
+*Garage*.dxf
+*Garage*.dwg
+Garage_v3_*
 
 # IDE / OS
 .idea/
