@@ -2,7 +2,7 @@
 
 Natywna aplikacja Windows (**Rust + egui**). Działa niezależnie od wersji Python w katalogu głównym repozytorium.
 
-**Wersja dokumentacji:** 0.2 / release repo **v1.2.x**
+**Wersja dokumentacji:** 0.3 / release repo **v1.3.x**
 
 ---
 

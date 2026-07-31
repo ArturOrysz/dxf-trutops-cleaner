@@ -11,7 +11,7 @@ use crate::geom::{
 };
 use std::fs;
 use std::path::Path;
-use usvg::{tiny_skia_path::PathSegment, Node, Options, Tree};
+use usvg::{tiny_skia_path::PathSegment, Node, Options, Transform, Tree};
 
 #[derive(Debug, Default)]
 pub struct SvgStats {
@@ -36,17 +36,28 @@ fn quad_to_cubic(p0: Point2, p1: Point2, p2: Point2) -> [Point2; 4] {
     ]
 }
 
-fn flip_y(p: Point2, height: f64) -> Point2 {
-    (p.0, height - p.1)
+fn map_pt(ts: Transform, x: f32, y: f32, height: f64) -> Point2 {
+    let mut p = usvg::tiny_skia_path::Point::from_xy(x, y);
+    ts.map_point(&mut p);
+    (p.x as f64, height - p.y as f64)
 }
 
-fn path_to_contour(
-    path: &usvg::tiny_skia_path::Path,
+/// One SVG `<path>` can contain many subpaths (`M` …). Each subpath becomes its
+/// own contour — merging them would draw chords between disconnected geometry.
+fn path_to_contours(
+    path: &usvg::Path,
     height: f64,
     tolerance: f64,
     layer: &str,
-) -> Option<(Contour, usize, usize)> {
-    let mut segments: Vec<Vec<Vertex>> = Vec::new();
+) -> Vec<(Contour, usize, usize)> {
+    if !path.is_visible() {
+        return Vec::new();
+    }
+
+    let ts = path.abs_transform();
+    let data = path.data();
+
+    let mut out = Vec::new();
     let mut cursor = (0.0_f64, 0.0_f64);
     let mut start = cursor;
     let mut sub_segs: Vec<Vec<Vertex>> = Vec::new();
@@ -60,23 +71,54 @@ fn path_to_contour(
         out.push(as_bulge_vertices(&[from, to]));
     };
 
-    for seg in path.segments() {
+    let flush = |sub_segs: &mut Vec<Vec<Vertex>>,
+                 before: &mut usize,
+                 closed: bool,
+                 layer: &str,
+                 out: &mut Vec<(Contour, usize, usize)>| {
+        if sub_segs.is_empty() {
+            return;
+        }
+        let segs: Vec<Vec<Vertex>> = sub_segs.drain(..).collect();
+        let b = std::mem::take(before);
+        let merged = merge_vertices(&segs, 1e-9);
+        let closed = closed
+            || (!merged.is_empty()
+                && dist(
+                    (merged[0].0, merged[0].1),
+                    (merged.last().unwrap().0, merged.last().unwrap().1),
+                ) < 1e-4);
+        let verts = clean_vertices(&merged, closed);
+        if verts.len() < 2 {
+            return;
+        }
+        let after = verts.len();
+        out.push((
+            Contour {
+                verts,
+                closed,
+                layer: layer.to_string(),
+            },
+            b,
+            after,
+        ));
+    };
+
+    for seg in data.segments() {
         match seg {
             PathSegment::MoveTo(p) => {
-                if !sub_segs.is_empty() {
-                    segments.extend(sub_segs.drain(..));
-                }
-                cursor = flip_y((p.x as f64, p.y as f64), height);
+                flush(&mut sub_segs, &mut before, false, layer, &mut out);
+                cursor = map_pt(ts, p.x, p.y, height);
                 start = cursor;
             }
             PathSegment::LineTo(p) => {
-                let to = flip_y((p.x as f64, p.y as f64), height);
+                let to = map_pt(ts, p.x, p.y, height);
                 push_line(cursor, to, &mut sub_segs, &mut before);
                 cursor = to;
             }
             PathSegment::QuadTo(p1, p2) => {
-                let c1 = flip_y((p1.x as f64, p1.y as f64), height);
-                let to = flip_y((p2.x as f64, p2.y as f64), height);
+                let c1 = map_pt(ts, p1.x, p1.y, height);
+                let to = map_pt(ts, p2.x, p2.y, height);
                 let ctrl = quad_to_cubic(cursor, c1, to);
                 before += 4;
                 let verts = approximate_bezier(&ctrl, tolerance);
@@ -88,9 +130,9 @@ fn path_to_contour(
             PathSegment::CubicTo(p1, p2, p3) => {
                 let ctrl = [
                     cursor,
-                    flip_y((p1.x as f64, p1.y as f64), height),
-                    flip_y((p2.x as f64, p2.y as f64), height),
-                    flip_y((p3.x as f64, p3.y as f64), height),
+                    map_pt(ts, p1.x, p1.y, height),
+                    map_pt(ts, p2.x, p2.y, height),
+                    map_pt(ts, p3.x, p3.y, height),
                 ];
                 before += 4;
                 let verts = approximate_bezier(&ctrl, tolerance);
@@ -102,39 +144,12 @@ fn path_to_contour(
             PathSegment::Close => {
                 push_line(cursor, start, &mut sub_segs, &mut before);
                 cursor = start;
-                if !sub_segs.is_empty() {
-                    segments.extend(sub_segs.drain(..));
-                }
+                flush(&mut sub_segs, &mut before, true, layer, &mut out);
             }
         }
     }
-    if !sub_segs.is_empty() {
-        segments.extend(sub_segs);
-    }
-
-    let merged = merge_vertices(&segments, 1e-9);
-    let closed = !merged.is_empty()
-        && dist(
-            (merged[0].0, merged[0].1),
-            (
-                merged.last().unwrap().0,
-                merged.last().unwrap().1,
-            ),
-        ) < 1e-4;
-    let verts = clean_vertices(&merged, closed);
-    if verts.len() < 2 {
-        return None;
-    }
-    let after = verts.len();
-    Some((
-        Contour {
-            verts,
-            closed,
-            layer: layer.to_string(),
-        },
-        before,
-        after,
-    ))
+    flush(&mut sub_segs, &mut before, false, layer, &mut out);
+    out
 }
 
 fn walk_group(
@@ -148,10 +163,7 @@ fn walk_group(
         match node {
             Node::Group(g) => walk_group(g, height, tolerance, out, stats),
             Node::Path(path) => {
-                let data = path.data();
-                if let Some((contour, before, after)) =
-                    path_to_contour(data, height, tolerance, "0")
-                {
+                for (contour, before, after) in path_to_contours(path, height, tolerance, "0") {
                     stats.path_count += 1;
                     stats.before += before;
                     stats.after += after;

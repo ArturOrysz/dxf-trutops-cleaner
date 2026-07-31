@@ -11,6 +11,7 @@ dist/
 *.spec
 rust-app/target/
 rust-app/target_fixed/
+rust-app/target_svgfix/
 
 # Wygenerowane pliki konwersji
 *_20*.dxf
