@@ -45,7 +45,7 @@ Po imporcie w TruTops warto zrobić **Zoom Extents** / dopasowanie widoku.
 
 ### Uruchomienie z źródeł
 
-GUI jest minimalne: **Wybierz DXF…** → **Konwertuj** → log.  
+GUI jest minimalne: **Wybierz DXF/SVG…** → **Konwertuj** → log.  
 Tolerancja w GUI jest stała (`0.1` mm); inne wartości przez CLI (`-t`).
 
 ```powershell
@@ -88,7 +88,7 @@ cargo run --release -- "C:\sciezka\plik.dxf" -t 0.1
 
 | Argument | Opis |
 |----------|------|
-| `plik.dxf` | Jeden lub więcej plików wejściowych |
+| `plik.dxf` / `plik.svg` | Jeden lub więcej plików wejściowych |
 | `-t` / `--tolerance` | Tolerancja odchylenia w mm (domyślnie `0.1`) |
 | `-o` / `--output` | Ścieżka wyjściowa (tylko przy jednym pliku wejściowym) |
 
