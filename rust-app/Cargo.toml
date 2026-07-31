@@ -1,0 +1,16 @@
+[package]
+name = "dxf_trutops_cleaner_rs"
+version = "0.1.0"
+edition = "2021"
+description = "DXF cleaner for TruTops — SPLINE/polylines to LINE+ARC (native Rust GUI)"
+license = "MIT"
+
+[dependencies]
+eframe = { version = "0.31", default-features = true }
+rfd = "0.15"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

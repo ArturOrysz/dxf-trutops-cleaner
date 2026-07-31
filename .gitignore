@@ -9,6 +9,8 @@ venv/
 build/
 dist/
 *.spec
+rust-app/target/
+rust-app/target_fixed/
 
 # Wygenerowane pliki konwersji
 *_20*.dxf
