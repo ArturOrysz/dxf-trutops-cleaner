@@ -1,4 +1,4 @@
-//! Convert DXF drawing → simplified LINE/ARC contours.
+//! Convert DXF / SVG → simplified LINE/ARC contours.
 
 use crate::dxf_read::{read_dxf, DxfDrawing};
 use crate::dxf_write::{write_r2000, Contour};
@@ -6,6 +6,7 @@ use crate::geom::{
     approximate_polyline_arcs, as_bulge_vertices, clean_vertices, count_arc_segments,
     dedupe_consecutive, dist, rdp_simplify, sample_bspline,
 };
+use crate::svg_read::read_svg;
 use chrono::Local;
 use std::path::{Path, PathBuf};
 
@@ -17,11 +18,13 @@ pub struct ConvertResult {
     pub contours: usize,
     pub splines: usize,
     pub arc_segments: usize,
+    pub source: &'static str,
 }
 
 pub fn timestamped_output(input: &Path) -> PathBuf {
     let stamp = Local::now().format("%Y%m%d_%H%M%S");
     let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
+    // Always write DXF next to source (also when input is .svg)
     input.with_file_name(format!("{stem}_{stamp}.dxf"))
 }
 
@@ -110,11 +113,40 @@ pub fn convert_file(
     tolerance: f64,
     output: Option<PathBuf>,
 ) -> Result<ConvertResult, String> {
-    let doc = read_dxf(input)?;
-    let (contours, before, after, splines, arc_segments) = collect_simplified(&doc, tolerance);
-    if contours.is_empty() {
-        return Err("Brak geometrii LINE/POLYLINE/LWPOLYLINE/SPLINE.".into());
-    }
+    let ext = input
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    let (contours, before, after, curves, arc_segments, source) = match ext.as_str() {
+        "svg" => {
+            let (contours, stats) = read_svg(input, tolerance)?;
+            (
+                contours,
+                stats.before,
+                stats.after,
+                stats.path_count,
+                stats.arc_segments,
+                "SVG",
+            )
+        }
+        "dxf" => {
+            let doc = read_dxf(input)?;
+            let (contours, before, after, splines, arc_segments) =
+                collect_simplified(&doc, tolerance);
+            if contours.is_empty() {
+                return Err("Brak geometrii LINE/POLYLINE/LWPOLYLINE/SPLINE.".into());
+            }
+            (contours, before, after, splines, arc_segments, "DXF")
+        }
+        _ => {
+            return Err(format!(
+                "Nieobslugiwane rozszerzenie '.{ext}' (oczekiwano .dxf lub .svg)."
+            ));
+        }
+    };
+
     let out = output.unwrap_or_else(|| timestamped_output(input));
     write_r2000(&contours, &out)?;
     Ok(ConvertResult {
@@ -122,7 +154,8 @@ pub fn convert_file(
         before,
         after,
         contours: contours.len(),
-        splines,
+        splines: curves,
         arc_segments,
+        source,
     })
 }

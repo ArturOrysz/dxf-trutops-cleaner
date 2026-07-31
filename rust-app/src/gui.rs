@@ -34,7 +34,9 @@ impl App {
 
     fn pick_files(&mut self) {
         if let Some(paths) = rfd::FileDialog::new()
+            .add_filter("DXF / SVG", &["dxf", "svg"])
             .add_filter("DXF", &["dxf"])
+            .add_filter("SVG", &["svg"])
             .pick_files()
         {
             for p in paths {
@@ -68,8 +70,8 @@ impl App {
                         ));
                         if r.splines > 0 {
                             let _ = tx.send(format!(
-                                "SPLINE: {} -> lukow: {}",
-                                r.splines, r.arc_segments
+                                "{} krzywych/sciazek: {} -> lukow: {}",
+                                r.source, r.splines, r.arc_segments
                             ));
                         }
                         let _ = tx.send(format!("Zapisano: {}", r.output.display()));
@@ -120,13 +122,13 @@ impl eframe::App for App {
         self.poll_worker(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("DXF → TruTops");
-            ui.label("SPLINE / polilinie → LINE + ARC");
+            ui.heading("DXF / SVG → TruTops");
+            ui.label("Bezier / polilinie / SPLINE → LINE + ARC");
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(!self.busy, egui::Button::new("Wybierz DXF…"))
+                    .add_enabled(!self.busy, egui::Button::new("Wybierz DXF/SVG…"))
                     .clicked()
                 {
                     self.pick_files();

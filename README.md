@@ -6,8 +6,8 @@ W repozytorium są **dwie niezależne aplikacje** o tej samej funkcji:
 
 | Wersja | Katalog | Opis |
 |--------|---------|------|
-| **Python** | root (`simplify_dxf.py`, `dxf_gui.py`) | CLI + GUI (Tkinter), EXE przez PyInstaller |
-| **Rust** (zalecana) | [`rust-app/`](rust-app/README.md) | Natywne GUI (egui), mniejszy EXE, bez Pythona |
+| **Python** | root (`simplify_dxf.py`, `dxf_gui.py`) | CLI + GUI (Tkinter), EXE przez PyInstaller — **tylko DXF** |
+| **Rust** (zalecana) | [`rust-app/`](rust-app/README.md) | Natywne GUI, **DXF + SVG** → `LINE`/`ARC` |
 
 ---
 

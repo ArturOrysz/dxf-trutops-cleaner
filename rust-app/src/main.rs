@@ -3,6 +3,7 @@ mod dxf_read;
 mod dxf_write;
 mod geom;
 mod gui;
+mod svg_read;
 
 use std::env;
 use std::path::PathBuf;
@@ -51,7 +52,7 @@ fn main() -> ExitCode {
     }
 
     if inputs.is_empty() {
-        eprintln!("Podaj plik DXF lub uruchom bez argumentow (GUI).");
+        eprintln!("Podaj plik DXF/SVG lub uruchom bez argumentow (GUI).");
         return ExitCode::FAILURE;
     }
     if output.is_some() && inputs.len() > 1 {
@@ -76,10 +77,11 @@ fn main() -> ExitCode {
                 println!("Kontury: {}", r.contours);
                 if r.splines > 0 {
                     println!(
-                        "SPLINE: {} -> segmenty lukowe: {}",
-                        r.splines, r.arc_segments
+                        "{}: {} krzywych/sciazek -> lukow: {}",
+                        r.source, r.splines, r.arc_segments
                     );
                 }
+                println!("Zrodlo: {}", r.source);
                 println!("Zapisano DXF: {}", r.output.display());
             }
             Err(e) => {

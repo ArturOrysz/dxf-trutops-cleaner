@@ -15,6 +15,9 @@ Przygotowuje DXF pod **Trumpf TruTops**:
 | Gęste `POLYLINE` / `LWPOLYLINE` | Uproszczenie RDP → odcinki `LINE` |
 | `LINE` | Bez zmian (jako `LINE`) |
 | `SPLINE` (Bézier / B-spline) | Dopasowanie łuków → `LINE` + `ARC` |
+| **`SVG`** (path / koła / linie / …) | Bézier i kształty → `LINE` + `ARC` |
+
+> SVG **nie** jest „tylko Bézier”: w ścieżkach są też linie, kwadraty Béziera, łuki eliptyczne; osobno `circle` / `rect` / `line` / `polyline`. Silnik `usvg` sprowadza to do linii + krzywych, a my do **`LINE` + `ARC`**.
 
 Wyjście zawiera **wyłącznie** encje `LINE` i `ARC` w formacie **DXF R2000 (AC1015)**.
 
@@ -119,8 +122,9 @@ rust-app/
   src/
     main.rs            # CLI + start GUI
     gui.rs             # egui
-    convert.rs         # pipeline konwersji
+    convert.rs         # pipeline konwersji (DXF + SVG)
     dxf_read.rs        # odczyt LINE/POLYLINE/LWPOLYLINE/SPLINE
+    svg_read.rs        # odczyt SVG (usvg → Bézier/linie → łuki)
     dxf_write.rs       # zapis R2000 LINE+ARC (+ filtr prawie-płaskich ARC)
     geom.rs            # RDP, bulge, B-spline, dopasowanie łuków
   Cargo.toml
