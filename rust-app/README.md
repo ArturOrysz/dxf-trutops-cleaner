@@ -2,7 +2,7 @@
 
 Natywna aplikacja Windows (**Rust + egui**). Działa niezależnie od wersji Python w katalogu głównym repozytorium.
 
-**Wersja dokumentacji:** 0.1 / release repo **v1.2.0**
+**Wersja dokumentacji:** 0.2 / release repo **v1.2.x**
 
 ---
 
@@ -41,6 +41,9 @@ Po imporcie w TruTops warto zrobić **Zoom Extents** / dopasowanie widoku.
 - Windows 10/11 (MSVC)
 
 ### Uruchomienie z źródeł
+
+GUI jest minimalne: **Wybierz DXF…** → **Konwertuj** → log.  
+Tolerancja w GUI jest stała (`0.1` mm); inne wartości przez CLI (`-t`).
 
 ```powershell
 cd rust-app

@@ -9,6 +9,10 @@ license = "MIT"
 eframe = { version = "0.31", default-features = true }
 rfd = "0.15"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[build-dependencies]
+embed-resource = "3.0"
 
 [profile.release]
 lto = true

@@ -1,14 +1,15 @@
-//! Native GUI (egui / eframe).
+//! Minimal native GUI (egui): pick files → convert → log.
 
 use crate::convert::convert_file;
-use eframe::egui;
+use eframe::egui::{self, IconData};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 
+const DEFAULT_TOLERANCE: f64 = 0.1;
+
 pub struct App {
     files: Vec<PathBuf>,
-    tolerance: f64,
     log: String,
     busy: bool,
     rx: Option<Receiver<String>>,
@@ -18,7 +19,6 @@ impl Default for App {
     fn default() -> Self {
         Self {
             files: Vec::new(),
-            tolerance: 0.1,
             log: String::new(),
             busy: false,
             rx: None,
@@ -51,18 +51,16 @@ impl App {
         }
         self.busy = true;
         let files = self.files.clone();
-        let tolerance = self.tolerance;
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
         self.append_log(format!(
-            "---- Start: plikow={}, tol={:.2} ----",
-            files.len(),
-            tolerance
+            "---- Start: {} plik(ow), tol={DEFAULT_TOLERANCE} ----",
+            files.len()
         ));
         thread::spawn(move || {
             for path in files {
                 let _ = tx.send(format!("Wczytywanie: {}", path.display()));
-                match convert_file(&path, tolerance, None) {
+                match convert_file(&path, DEFAULT_TOLERANCE, None) {
                     Ok(r) => {
                         let _ = tx.send(format!(
                             "OK: {} -> {} | kontury: {}",
@@ -70,14 +68,14 @@ impl App {
                         ));
                         if r.splines > 0 {
                             let _ = tx.send(format!(
-                                "SPLINE: {} -> segmenty lukowe: {}",
+                                "SPLINE: {} -> lukow: {}",
                                 r.splines, r.arc_segments
                             ));
                         }
-                        let _ = tx.send(format!("Zapisano DXF: {}", r.output.display()));
+                        let _ = tx.send(format!("Zapisano: {}", r.output.display()));
                     }
                     Err(e) => {
-                        let _ = tx.send(format!("BLAD: {} | {}", path.display(), e));
+                        let _ = tx.send(format!("BLAD: {} | {e}", path.display()));
                     }
                 }
             }
@@ -122,61 +120,53 @@ impl eframe::App for App {
         self.poll_worker(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("DXF Cleaner dla TruTops (Rust)");
+            ui.heading("DXF → TruTops");
             ui.label("SPLINE / polilinie → LINE + ARC");
-            ui.add_space(8.0);
+            ui.add_space(12.0);
 
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(!self.busy, egui::Button::new("Wybierz pliki DXF…"))
+                    .add_enabled(!self.busy, egui::Button::new("Wybierz DXF…"))
                     .clicked()
                 {
                     self.pick_files();
                 }
                 if ui
-                    .add_enabled(!self.busy, egui::Button::new("Wyczysc liste"))
+                    .add_enabled(
+                        !self.busy && !self.files.is_empty(),
+                        egui::Button::new("Konwertuj"),
+                    )
                     .clicked()
                 {
-                    self.files.clear();
+                    self.start_convert();
+                }
+                if self.busy {
+                    ui.spinner();
                 }
             });
 
-            ui.add_space(8.0);
-            ui.label(format!("Tolerancja: {:.2} mm", self.tolerance));
-            ui.add(egui::Slider::new(&mut self.tolerance, 0.01..=2.0).text("mm"));
-
-            ui.add_space(8.0);
-            ui.group(|ui| {
-                ui.label("Pliki:");
+            if !self.files.is_empty() {
+                ui.add_space(6.0);
+                ui.label(format!("Wybrane: {} plik(ow)", self.files.len()));
                 egui::ScrollArea::vertical()
-                    .max_height(160.0)
+                    .max_height(100.0)
                     .show(ui, |ui| {
                         for f in &self.files {
-                            ui.label(f.display().to_string());
+                            ui.monospace(
+                                f.file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| f.display().to_string()),
+                            );
                         }
                     });
-            });
-
-            ui.add_space(8.0);
-            if ui
-                .add_enabled(
-                    !self.busy && !self.files.is_empty(),
-                    egui::Button::new("Uprosc DXF"),
-                )
-                .clicked()
-            {
-                self.start_convert();
-            }
-            if self.busy {
-                ui.spinner();
-                ui.label("Konwersja…");
             }
 
-            ui.add_space(8.0);
-            ui.label("Log:");
+            ui.add_space(10.0);
+            ui.separator();
+            ui.label("Log");
             egui::ScrollArea::vertical()
                 .stick_to_bottom(true)
-                .max_height(220.0)
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.monospace(&self.log);
                 });
@@ -184,11 +174,25 @@ impl eframe::App for App {
     }
 }
 
+fn load_icon() -> IconData {
+    let png = include_bytes!("../assets/icon.png");
+    let image = image::load_from_memory(png)
+        .expect("icon.png")
+        .into_rgba8();
+    let (width, height) = image.dimensions();
+    IconData {
+        rgba: image.into_raw(),
+        width,
+        height,
+    }
+}
+
 pub fn run() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([720.0, 620.0])
-            .with_min_inner_size([560.0, 480.0]),
+            .with_inner_size([520.0, 420.0])
+            .with_min_inner_size([400.0, 320.0])
+            .with_icon(load_icon()),
         ..Default::default()
     };
     eframe::run_native(
